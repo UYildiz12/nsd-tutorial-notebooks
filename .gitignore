@@ -1,0 +1,21 @@
+# Checkpoints
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+
+# Experimental
+Merged_Pipeline_Experimental.ipynb
+Py_versions/Merged_Pipeline_Experimental.py
