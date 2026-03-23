@@ -196,7 +196,7 @@ else:
 # You're all set! You learned the basics of colab and are ready to use it to your advantage!
 # 
 # **Continue to [Notebook 1: fMRI & Voxels](https://colab.research.google.com/drive/1J1KX6V6ZGwjbcZ65XPD8vfkCqrtnPoXG#scrollTo=UTiFdDsg7HHi)** where we'll learn what fMRI actually measures, load our dataset and take a look at the activation patterns.
-#
+# 
 
 # ## Source: Notebook1_fMRI
 
@@ -1213,7 +1213,7 @@ def voxel_select(voxels: torch.Tensor, mode: str = "mean") -> torch.Tensor:
 # In[ ]:
 
 
-# --- Helper to build the streaming dataset ---
+# Helper to build the streaming dataset
 def build_nsd_dataset(
     subject_id: int,
     split: str,
@@ -1261,12 +1261,11 @@ def build_nsd_dataset(
 
     return dataset
 
-# --- Main Loading Function ---
+# Main Loading Function
 def get_dataloaders(cfg: LowLevelCfg):
     print(f"Setting up streaming dataloaders for Subject {cfg.subject_id}...")
 
-    # 1. Train Loader
-    # Train has ~18 shards, so multiple workers work well.
+    # 1. Train Loader.
     # Pass seed for deterministic shuffling
     train_ds = build_nsd_dataset(cfg.subject_id, "train", cfg.batch_size, seed=cfg.seed)
     train_loader = wds.WebLoader(
@@ -1277,8 +1276,6 @@ def get_dataloaders(cfg: LowLevelCfg):
     )
 
     # 2. Validation Loader
-    # Val has only 1 shard. Using num_workers > 1 causes "No samples" error in empty workers.
-    # We use num_workers=0 to run in the main process.
     val_ds = build_nsd_dataset(cfg.subject_id, "val", cfg.batch_size, seed=cfg.seed)
     val_loader = wds.WebLoader(
         val_ds,
@@ -1288,7 +1285,6 @@ def get_dataloaders(cfg: LowLevelCfg):
     )
 
     # 3. Test Loader
-    # Test has 2 shards. To be safe and simple, we also use 0 workers.
     test_ds = build_nsd_dataset(cfg.subject_id, "test", cfg.batch_size, seed=cfg.seed)
     test_loader = wds.WebLoader(
         test_ds,
@@ -1319,9 +1315,7 @@ def get_dataloaders(cfg: LowLevelCfg):
 # In[ ]:
 
 
-# --- Quick Data Preview (Optional) ---
-# This cell demonstrates the data format.
-
+# Quick Data Preview
 
 train_loader, val_loader, test_loader = get_dataloaders(ll)
 
@@ -1475,23 +1469,19 @@ print("Xte:", Xte.shape, "Ite:", Ite.shape)
 # In[ ]:
 
 
-# --- Prepare TWO versions of voxel data ---
+#  Prepare TWO versions of voxel data
 # AVERAGED: For Ridge regression (reduces noise, better linear fit)
 # EXPANDED: For MLPs (use all repeats as separate samples = 3x more data!)
 
 print(f"Original shape: {Xtr.shape}  (N samples × 3 repeats × V voxels)")
 N_tr, R, V = Xtr.shape
 
-# --- 1. AVERAGED version for Ridge ---
 print("\nCreating AVERAGED data for Ridge...")
 Xtr_avg = voxel_select(Xtr, mode="mean")  # [N, V]
 Xva_avg = voxel_select(Xva, mode="mean")
 Xte_avg = voxel_select(Xte, mode="mean")
 print(f"   Xtr_avg: {Xtr_avg.shape}")
 
-# --- 2. EXPANDED version for MLPs (3x more samples!) ---
-# Each repeat sees the same image, so we only expand voxels here
-# The latents (Ztr_exp) will be replicated later - no extra VAE encoding needed!
 print("\nCreating EXPANDED voxels for MLPs (3x samples)...")
 Xtr_exp_raw = Xtr.view(N_tr * R, V)  # [N*3, V]
 print(f"   Xtr_exp: {Xtr_exp_raw.shape} ({N_tr} samples × {R} repeats = {N_tr * R} total)")
@@ -1723,7 +1713,7 @@ print("Target normalization:", "Ymu", tuple(Ymu.shape), "Ysd", tuple(Ysd.shape))
 # In[ ]:
 
 
-# --- Alpha Grid Search (on normalized latent targets) ---
+# Alpha Grid Search
 alphas = [10000, 50000, 80000, 100000]
 best_alpha = None
 best_mse = float("inf")
@@ -1744,12 +1734,12 @@ for a in alphas:
 
 print(f"\nBest Alpha: {best_alpha:.0f} (MSE norm: {best_mse:.6f})")
 
-# --- Fit final Ridge with best alpha ---
+# Fit final Ridge with best alpha
 ridge = DualRidge(alpha=best_alpha).fit(Xtr, Ytr_n)
 Yva_hat_n = ridge.predict(Xva)
 print("Pred val latent flat (normalized):", Yva_hat_n.shape)
 
-# --- Unnormalize for reshaping / decoding / metrics ---
+# Unnormalize for reshaping / decoding / metrics
 Yva_hat = unnormalize_targets(Yva_hat_n, Ymu, Ysd)
 Zva_hat = Yva_hat.view_as(Zva)
 
@@ -1800,14 +1790,14 @@ def resize01(images, size):
     x = torch.nn.functional.interpolate(x, size=(size, size), mode="bilinear", align_corners=False)
     return x
 
-# --- Memory Cleanup ---
+# Memory Cleanup
 gc.collect()
 torch.cuda.empty_cache()
 
 # Load VAE once for both visualization and evaluation
 vae = AutoencoderKL.from_pretrained(ll.vae_id).to(device).eval()
 
-# --- 1. VISUALIZATION: First 8 samples ---
+# VISUALIZATION: First 8 samples
 print("Decoding first 8 samples for visualization...")
 coarse = decode_latents_sdvae(Zva_hat[:8], vae)
 gt_viz = decode_latents_sdvae(Zva[:8], vae)
@@ -1825,7 +1815,7 @@ plt.show()
 del coarse, gt_viz
 torch.cuda.empty_cache()
 
-# --- 2. EVALUATION: Full validation set ---
+# EVALUATION: Full validation set
 print("\nComputing Ridge metrics...")
 
 # Compute latent MSE
@@ -2311,14 +2301,14 @@ from pytorch_msssim import ssim as compute_ssim
 import torch.nn.functional as F
 import gc
 
-# --- Memory Cleanup ---
+# Memory Cleanup
 gc.collect()
 torch.cuda.empty_cache()
 
 print("Evaluating on TEST SET")
 print(f"   Test samples: {len(Xte)}")
 
-# --- Generate latent predictions on TEST set ---
+# Generate latent predictions on TEST set
 print("\nGenerating predictions...")
 Yte_ridge = ridge.predict(Xte)
 Yte_ridge_unnorm = unnormalize_targets(torch.tensor(Yte_ridge).float(), Ymu, Ysd)
@@ -2334,8 +2324,6 @@ Zte_hat_mlp = Yte_hat_mlp.view(-1, *Zte.shape[1:])
 del Yte_hat_mlp_n, Yte_hat_mlp
 gc.collect()
 
-# --- Compute metrics in small batches (memory-efficient) ---
-print("\nComputing metrics in batches of 10 (memory-efficient)...")
 
 vae = AutoencoderKL.from_pretrained(ll.vae_id).to(device).eval()
 
@@ -2383,7 +2371,7 @@ del vae
 gc.collect()
 torch.cuda.empty_cache()
 
-# --- Aggregate and Print Summary Metrics ---
+# Aggregate and Print Summary Metrics
 ridge_ssims = np.array([m['ridge_ssim'] for m in all_metrics])
 mlp_ssims = np.array([m['mlp_ssim'] for m in all_metrics])
 ridge_psnrs = np.array([m['ridge_psnr'] for m in all_metrics])
@@ -2693,7 +2681,6 @@ print("Saving model and test latents...")
 # Ensure directories exist (in case Drive was remounted or paths changed)
 LATENTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# --- 1. Save test latents (for Notebook 5 img2img pipeline) ---
 if 'Zte_hat_final' in globals():
     latents_dict = {
         "test": Zte_hat_final,
@@ -2712,7 +2699,6 @@ if 'Zte_hat_final' in globals():
 else:
     print("Test latents not found - they may have been deleted.")
 
-# --- 2. Save model and normalization parameters ---
 if 'model' in globals():
     model_dir = SAVE_DIR / f"subj{ll.subject_id:02d}"
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -2848,7 +2834,7 @@ print(f"Results will be saved to: {ROOT_PATH}")
 # In[ ]:
 
 
-# --- Reproducibility ---
+# Reproducibility
 import random
 import os
 
@@ -2877,7 +2863,7 @@ print("Device:", device)
 # In[ ]:
 
 
-# --- Data Loading Functions ---
+# Data Loading Functions
 def build_nsd_dataset(subject_id, split, batch_size, seed=42):
     """
     Creates a streaming WebDataset pipeline.
@@ -2925,16 +2911,16 @@ def voxel_select(voxels, mode="mean"):
 # In[ ]:
 
 
-# --- Config (using dataclass exactly like NB3) ---
+# Config
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class HighLevelConfig:
-    # Data (matching NB3's LowLevelCfg structure)
+    # Data
     subject: int = 1
     seed: int = 42
 
-    # Streaming (exactly like NB3)
+    # Streaming
     batch_size: int = 64
     num_workers: int = 4  # Increased to 4 for faster downloads (like NB3)
 
@@ -2973,7 +2959,7 @@ print(hl)
 # In[ ]:
 
 
-# --- Main Loading Function ---
+# Main Loading Function
 def get_dataloaders(cfg):
     print(f"Setting up streaming dataloaders for Subject {cfg.subject}...")
 
@@ -3302,8 +3288,6 @@ def evaluate_retrieval(pred_features, target_features, name="Model", n_eval=300)
     pairwise_wins = (correct_sims > sim_matrix).float().sum()
     pairwise_acc = pairwise_wins / (n * (n - 1))
 
-    # 2-way forced choice: for each sample, pick a random distractor and check
-    # if the correct target scores higher. Average over many trials for stability.
     n_trials = 1000
     torch.manual_seed(42)
     wins = 0
@@ -3438,10 +3422,10 @@ print("Training MLP")
 set_seed(hl.seed)
 
 # Targets: raw CLIP embeddings, expanded to match voxel repeats
-Ytr_clip = (Ytr * Ysd + Ymu).float()                  # unnormalize
+Ytr_clip = (Ytr * Ysd + Ymu).float()
 Yva_clip = (Yva * Ysd + Ymu).float()
 
-Ytr_clip_exp = Ytr_clip.repeat_interleave(R, dim=0)   # match expanded voxels
+Ytr_clip_exp = Ytr_clip.repeat_interleave(R, dim=0)
 print(f"Expanded targets: {Ytr_clip_exp.shape[0]} (should match {Xtr_exp.shape[0]})")
 assert Ytr_clip_exp.shape[0] == Xtr_exp.shape[0]
 
@@ -3567,9 +3551,6 @@ torch.cuda.empty_cache()
 # In[ ]:
 
 
-# MLP outputs unit vectors. Scale using TRAIN-set CLIP norms so downstream
-# code and saving get embeddings in the same ballpark as Ridge and GT
-# without using any test-set statistics.
 train_mean_norm = Ytr_clip.norm(dim=-1).mean()
 Yte_pred_mlp_un = Yte_pred_mlp * train_mean_norm
 
@@ -3652,7 +3633,7 @@ from diffusers import StableDiffusionPipeline
 
 print("Loading SD 1.5 + IP-Adapter (compatible with 1024-dim OpenCLIP)...")
 
-# 1. Load Base SD 1.5
+#  Load Base SD 1.5
 pipe = StableDiffusionPipeline.from_pretrained(
     "runwayml/stable-diffusion-v1-5",
     torch_dtype=torch.float16,
@@ -3660,7 +3641,7 @@ pipe = StableDiffusionPipeline.from_pretrained(
     safety_checker=None
 ).to(device)
 
-# 2. Load IP-Adapter
+#  Load IP-Adapter
 pipe.load_ip_adapter("h94/IP-Adapter", subfolder="models", weight_name="ip-adapter_sd15.bin")
 
 # Optimization
@@ -3675,7 +3656,6 @@ def generate_from_clip(clip_embedding, seed=42):
     """
     Generates image from 1024-dim embedding using IP-Adapter.
     """
-    # Reshape: [1, 1024] -> [1, 1, 1024]
     valid_embeds = clip_embedding.view(1, 1, -1).to(device, dtype=torch.float16)
 
     # Create negative embeddings (zeros) to match positive shape
@@ -4041,7 +4021,7 @@ print(f"Loaded and verified {n_ll} aligned samples.")
 # In[6]:
 
 
-print("Loading SDXL Components (safe IP-Adapter setup)...")
+print("Loading SDXL Components...")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if "pipe" in globals():
@@ -4106,7 +4086,7 @@ print("SDXL Img2Img + IP-Adapter ready.")
 # #### Generation Functions
 # Here we define the two generation conditions used in the comparison. The semantic-only baseline tests what the high-level embedding can do by itself, while the hybrid function combines that semantic signal with the low-level reconstruction from Notebook 3.
 
-# In[76]:
+# In[23]:
 
 
 def preprocess_image(tensor_img):
@@ -4136,10 +4116,10 @@ def prepare_ip_adapter_embeds(embedding_tensor):
 def generate_sdxl_2pass(
     low_level_img_tensor,
     embedding_tensor,
-    seed=12,
+    seed=42,
     pass1_steps=24,
     pass2_steps=28,
-    pass1_strength=0.62,
+    pass1_strength=0.7,
     pass2_strength=0.35,
 ):
     pil_low = preprocess_image(low_level_img_tensor)
@@ -4149,7 +4129,7 @@ def generate_sdxl_2pass(
 
     # Pass 1: semantic correction while preserving low-level layout
     generator = torch.Generator(device="cpu").manual_seed(seed)
-    pipe.set_ip_adapter_scale(0.9)
+    pipe.set_ip_adapter_scale(1.1)
     pass1_result = pipe(
         prompt="realistic",
         negative_prompt="blurry, unrealistic, extra limbs",
@@ -4157,7 +4137,7 @@ def generate_sdxl_2pass(
         ip_adapter_image_embeds=[combined_embeds],
         strength=pass1_strength,
         num_inference_steps=pass1_steps,
-        guidance_scale=5.26,
+        guidance_scale=6.5,
         generator=generator,
     ).images[0]
 
@@ -4165,7 +4145,7 @@ def generate_sdxl_2pass(
     generator = torch.Generator(device="cpu").manual_seed(seed)
     pipe.set_ip_adapter_scale(0.3)
     final_result = pipe(
-        prompt="high quality, highly detailed, sharp focus, realistic, hyperrealistic",
+        prompt="high quality, highly detailed, sharp focus, realistic, hyperrealistic, sharp",
         negative_prompt="blurry, low quality, distorted, unrealistic, painting, illustration, fog, smoke,blur",
         image=pass1_result,
         ip_adapter_image_embeds=[combined_embeds],
@@ -4189,9 +4169,9 @@ def generate_semantic_only(embedding_tensor, seed=42, steps=30):
     combined_embeds = prepare_ip_adapter_embeds(embedding_tensor)
 
     generator = torch.Generator(device="cpu").manual_seed(seed)
-    pipe.set_ip_adapter_scale(1.0)
+    pipe.set_ip_adapter_scale(1.5)
     result = pipe(
-        prompt="",
+        prompt="sharp, realistic, photographic",
         negative_prompt="blurry, low quality, distorted, unrealistic, painting, illustration",
         image=blank,
         ip_adapter_image_embeds=[combined_embeds],
@@ -4215,7 +4195,7 @@ def generate_semantic_only(embedding_tensor, seed=42, steps=30):
 # 
 # Pay attention to how the combination works. The spatial layout from the low-level reconstruction constrains where things appear. The semantic embedding influences what those things look like. Neither signal alone determines the output; rather, they work together to produce something better than either could achieve independently.
 
-# In[77]:
+# In[24]:
 
 
 torch.manual_seed(42)
@@ -4268,7 +4248,7 @@ plt.show()
 # 
 # These small utilities prepare images for evaluation. The first converts a PIL image into a normalized PyTorch tensor, and the second defines the resolution used for our quantitative metrics.
 
-# In[78]:
+# In[25]:
 
 
 def pil_to_chw01(pil_img, size=256):
@@ -4287,7 +4267,7 @@ EVAL_RESOLUTION = 425
 # #### Evaluation Metrics
 # We evaluate reconstructions at two levels. Pixel-based metrics such as PixCorr and SSIM measure spatial fidelity, while feature-based identification metrics ask whether a pretrained vision model still recognizes the reconstruction as matching the correct image.
 
-# In[79]:
+# In[26]:
 
 
 @torch.no_grad()
@@ -4347,15 +4327,15 @@ def compute_ssim_mean(all_recons, all_images):
 # ####Run the Tutorial Evaluation
 # This cell runs a small evaluation subset to keep the tutorial practical on Colab. In the paper we report full test-set numbers, but here the goal is to show the expected trade-off pattern between low-level, semantic-only, and hybrid reconstructions without a very long runtime.
 
-# In[80]:
+# In[30]:
 
 
-N_QUANT_EVAL = 30
+N_QUANT_EVAL = 40
 #N_QUANT_EVAL = len(gt_images_tensor) #Uncomment this line to run the full evaluation, same with the paper.
-SEM_ONLY_STEPS = 20
-HYB_PASS1_STEPS = 24
-HYB_PASS2_STEPS = 28
-BASE_SEED = 4
+SEM_ONLY_STEPS = 8
+HYB_PASS1_STEPS = 12
+HYB_PASS2_STEPS = 12
+BASE_SEED = 42
 
 eval_indices = list(range(N_QUANT_EVAL))
 print(f"Quantitative evaluation: {N_QUANT_EVAL} test samples")
@@ -4467,12 +4447,16 @@ print(summary_df.to_string(index=False))
 # The table evaluates all three conditions across four metrics that capture different levels of visual similarity. PixCorr and SSIM measure pixel-level fidelity, reflecting how closely the reconstruction matches the original in raw spatial structure and luminance. InceptionV3 and CLIP operate at a higher level, measuring whether the reconstruction depicts the same kind of scene and objects as the original. These two neural network metrics are reported as 2-way identification accuracy. Given a reconstruction and two candidate images, one correct and one random distractor, how often does the model's feature space pick the correct match? Chance performance is 50%.
 # 
 # The pattern across conditions is consistent. Low-level-only reconstructions are strong on pixel-level metrics because they directly preserve spatial structure from the decoded latents, but they struggle on high-level metrics because a blurry color-matched blob often lacks recognizable object identity. Semantic-only generation flips this entirely. High-level scores are strong, but pixel-level fidelity is weak because the generative model has no spatial anchor and invents layouts freely. The hybrid pipeline finds a middle ground, retaining much of the spatial structure while matching or exceeding the semantic-only condition on high-level metrics.
+# 
+# A caveat is that the CLIP embedding is the dominant signal in our hybrid reconstructions for this tutorial. The low-level path is still useful, but as Notebook 3 showed, VAE reconstructions from brain activity reliably recover coarse layout features like the separation of ground and sky while they are not as reliable in the other spatial details. Since the hybrid pipeline uses these low-level reconstructions as its structural starting point, the fidelity ceiling they impose carries forward into the final output. We encoruage you to see how the low level priors affect the final hybrid reconstructions by comparing the low-level and hybrid reconstructions below.
+# 
+# 
 
-# In[81]:
+# In[34]:
 
 
 # Visualize a grid of reconstructions
-N_SHOW = N_QUANT_EVAL
+N_SHOW = N_QUANT_EVAL//3
 fig, axes = plt.subplots(N_SHOW, 4, figsize=(16, 4 * N_SHOW))
 
 col_labels = ["Ground Truth", "Low-level only", "Semantic only", "Hybrid"]
@@ -4492,7 +4476,7 @@ plt.tight_layout()
 plt.show()
 
 
-# The reconstructions illustrate the complementary nature of the two signals. Low-level outputs preserve coarse layout and color but lack semantic content. Semantic-only outputs often identify the correct category but invent the spatial context entirely. Hybrid outputs combine both, placing recognizable objects in approximately correct positions with approximately correct colors, though fine details diverge from the ground truth. The combination does not benefit every sample equally, and this variability is more visible in our pipeline than in state-of-the-art systems because we lack the dedicated diffusion prior and custom generation model that systems like MindEye use to bridge the gap between noisy brain-predicted embeddings and the conditioning interface of the generative model.
+# The reconstructions illustrate the complementary nature of the two signals. Low-level outputs preserve coarse layout and color but lack semantic content. Semantic-only outputs often identify the correct category but invent the spatial context entirely. Hybrid outputs combine both, placing recognizable objects in approximately correct positions with approximately correct colors, though fine details diverge from the ground truth. The combination does not benefit every sample equally, and this variability is more visible in our pipeline than in state-of-the-art systems because we lack several components that published pipelines use to bridge the gap between noisy brain-predicted embeddings and the conditioning interface of the generative model. These include dedicated diffusion priors, dual CLIP conditioning through both text and vision branches, and custom-trained generation models. These components are omitted because they could not be reliably implemented within the hardware constraints of this tutorial without substantially increasing complexity and runtime.
 # 
 # It is also worth noting that modern reconstruction pipelines often generate multiple candidate images per stimulus and select the best one using the model's own predicted embedding as a scoring criterion. MindEye, for example, generates 16 candidates per test image and selects the one whose CLIP embedding is most similar to the brain-predicted embedding. This second-order selection can substantially boost quantitative metrics because the stochastic nature of diffusion sampling means some candidates will align better with the target by chance. Our pipeline generates a single image per stimulus with a fixed seed, which provides a more conservative estimate of reconstruction quality but also means our reported metrics do not benefit from this selection effect.
 # 

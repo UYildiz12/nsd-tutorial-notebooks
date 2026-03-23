@@ -172,7 +172,7 @@ def voxel_select(voxels: torch.Tensor, mode: str = "mean") -> torch.Tensor:
 # In[ ]:
 
 
-# --- Helper to build the streaming dataset ---
+# Helper to build the streaming dataset
 def build_nsd_dataset(
     subject_id: int,
     split: str,
@@ -220,12 +220,11 @@ def build_nsd_dataset(
 
     return dataset
 
-# --- Main Loading Function ---
+# Main Loading Function
 def get_dataloaders(cfg: LowLevelCfg):
     print(f"Setting up streaming dataloaders for Subject {cfg.subject_id}...")
 
-    # 1. Train Loader
-    # Train has ~18 shards, so multiple workers work well.
+    # 1. Train Loader.
     # Pass seed for deterministic shuffling
     train_ds = build_nsd_dataset(cfg.subject_id, "train", cfg.batch_size, seed=cfg.seed)
     train_loader = wds.WebLoader(
@@ -236,8 +235,6 @@ def get_dataloaders(cfg: LowLevelCfg):
     )
 
     # 2. Validation Loader
-    # Val has only 1 shard. Using num_workers > 1 causes "No samples" error in empty workers.
-    # We use num_workers=0 to run in the main process.
     val_ds = build_nsd_dataset(cfg.subject_id, "val", cfg.batch_size, seed=cfg.seed)
     val_loader = wds.WebLoader(
         val_ds,
@@ -247,7 +244,6 @@ def get_dataloaders(cfg: LowLevelCfg):
     )
 
     # 3. Test Loader
-    # Test has 2 shards. To be safe and simple, we also use 0 workers.
     test_ds = build_nsd_dataset(cfg.subject_id, "test", cfg.batch_size, seed=cfg.seed)
     test_loader = wds.WebLoader(
         test_ds,
@@ -278,9 +274,7 @@ def get_dataloaders(cfg: LowLevelCfg):
 # In[ ]:
 
 
-# --- Quick Data Preview (Optional) ---
-# This cell demonstrates the data format.
-
+# Quick Data Preview
 
 train_loader, val_loader, test_loader = get_dataloaders(ll)
 
@@ -434,23 +428,19 @@ print("Xte:", Xte.shape, "Ite:", Ite.shape)
 # In[ ]:
 
 
-# --- Prepare TWO versions of voxel data ---
+#  Prepare TWO versions of voxel data
 # AVERAGED: For Ridge regression (reduces noise, better linear fit)
 # EXPANDED: For MLPs (use all repeats as separate samples = 3x more data!)
 
 print(f"Original shape: {Xtr.shape}  (N samples × 3 repeats × V voxels)")
 N_tr, R, V = Xtr.shape
 
-# --- 1. AVERAGED version for Ridge ---
 print("\nCreating AVERAGED data for Ridge...")
 Xtr_avg = voxel_select(Xtr, mode="mean")  # [N, V]
 Xva_avg = voxel_select(Xva, mode="mean")
 Xte_avg = voxel_select(Xte, mode="mean")
 print(f"   Xtr_avg: {Xtr_avg.shape}")
 
-# --- 2. EXPANDED version for MLPs (3x more samples!) ---
-# Each repeat sees the same image, so we only expand voxels here
-# The latents (Ztr_exp) will be replicated later - no extra VAE encoding needed!
 print("\nCreating EXPANDED voxels for MLPs (3x samples)...")
 Xtr_exp_raw = Xtr.view(N_tr * R, V)  # [N*3, V]
 print(f"   Xtr_exp: {Xtr_exp_raw.shape} ({N_tr} samples × {R} repeats = {N_tr * R} total)")
@@ -682,7 +672,7 @@ print("Target normalization:", "Ymu", tuple(Ymu.shape), "Ysd", tuple(Ysd.shape))
 # In[ ]:
 
 
-# --- Alpha Grid Search (on normalized latent targets) ---
+# Alpha Grid Search
 alphas = [10000, 50000, 80000, 100000]
 best_alpha = None
 best_mse = float("inf")
@@ -703,12 +693,12 @@ for a in alphas:
 
 print(f"\nBest Alpha: {best_alpha:.0f} (MSE norm: {best_mse:.6f})")
 
-# --- Fit final Ridge with best alpha ---
+# Fit final Ridge with best alpha
 ridge = DualRidge(alpha=best_alpha).fit(Xtr, Ytr_n)
 Yva_hat_n = ridge.predict(Xva)
 print("Pred val latent flat (normalized):", Yva_hat_n.shape)
 
-# --- Unnormalize for reshaping / decoding / metrics ---
+# Unnormalize for reshaping / decoding / metrics
 Yva_hat = unnormalize_targets(Yva_hat_n, Ymu, Ysd)
 Zva_hat = Yva_hat.view_as(Zva)
 
@@ -759,14 +749,14 @@ def resize01(images, size):
     x = torch.nn.functional.interpolate(x, size=(size, size), mode="bilinear", align_corners=False)
     return x
 
-# --- Memory Cleanup ---
+# Memory Cleanup
 gc.collect()
 torch.cuda.empty_cache()
 
 # Load VAE once for both visualization and evaluation
 vae = AutoencoderKL.from_pretrained(ll.vae_id).to(device).eval()
 
-# --- 1. VISUALIZATION: First 8 samples ---
+# VISUALIZATION: First 8 samples
 print("Decoding first 8 samples for visualization...")
 coarse = decode_latents_sdvae(Zva_hat[:8], vae)
 gt_viz = decode_latents_sdvae(Zva[:8], vae)
@@ -784,7 +774,7 @@ plt.show()
 del coarse, gt_viz
 torch.cuda.empty_cache()
 
-# --- 2. EVALUATION: Full validation set ---
+# EVALUATION: Full validation set
 print("\nComputing Ridge metrics...")
 
 # Compute latent MSE
@@ -1270,14 +1260,14 @@ from pytorch_msssim import ssim as compute_ssim
 import torch.nn.functional as F
 import gc
 
-# --- Memory Cleanup ---
+# Memory Cleanup
 gc.collect()
 torch.cuda.empty_cache()
 
 print("Evaluating on TEST SET")
 print(f"   Test samples: {len(Xte)}")
 
-# --- Generate latent predictions on TEST set ---
+# Generate latent predictions on TEST set
 print("\nGenerating predictions...")
 Yte_ridge = ridge.predict(Xte)
 Yte_ridge_unnorm = unnormalize_targets(torch.tensor(Yte_ridge).float(), Ymu, Ysd)
@@ -1293,8 +1283,6 @@ Zte_hat_mlp = Yte_hat_mlp.view(-1, *Zte.shape[1:])
 del Yte_hat_mlp_n, Yte_hat_mlp
 gc.collect()
 
-# --- Compute metrics in small batches (memory-efficient) ---
-print("\nComputing metrics in batches of 10 (memory-efficient)...")
 
 vae = AutoencoderKL.from_pretrained(ll.vae_id).to(device).eval()
 
@@ -1342,7 +1330,7 @@ del vae
 gc.collect()
 torch.cuda.empty_cache()
 
-# --- Aggregate and Print Summary Metrics ---
+# Aggregate and Print Summary Metrics
 ridge_ssims = np.array([m['ridge_ssim'] for m in all_metrics])
 mlp_ssims = np.array([m['mlp_ssim'] for m in all_metrics])
 ridge_psnrs = np.array([m['ridge_psnr'] for m in all_metrics])
@@ -1652,7 +1640,6 @@ print("Saving model and test latents...")
 # Ensure directories exist (in case Drive was remounted or paths changed)
 LATENTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# --- 1. Save test latents (for Notebook 5 img2img pipeline) ---
 if 'Zte_hat_final' in globals():
     latents_dict = {
         "test": Zte_hat_final,
@@ -1671,7 +1658,6 @@ if 'Zte_hat_final' in globals():
 else:
     print("Test latents not found - they may have been deleted.")
 
-# --- 2. Save model and normalization parameters ---
 if 'model' in globals():
     model_dir = SAVE_DIR / f"subj{ll.subject_id:02d}"
     model_dir.mkdir(parents=True, exist_ok=True)

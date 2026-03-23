@@ -94,7 +94,7 @@ print(f"Results will be saved to: {ROOT_PATH}")
 # In[ ]:
 
 
-# --- Reproducibility ---
+# Reproducibility
 import random
 import os
 
@@ -123,7 +123,7 @@ print("Device:", device)
 # In[ ]:
 
 
-# --- Data Loading Functions ---
+# Data Loading Functions
 def build_nsd_dataset(subject_id, split, batch_size, seed=42):
     """
     Creates a streaming WebDataset pipeline.
@@ -171,16 +171,16 @@ def voxel_select(voxels, mode="mean"):
 # In[ ]:
 
 
-# --- Config (using dataclass exactly like NB3) ---
+# Config
 from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class HighLevelConfig:
-    # Data (matching NB3's LowLevelCfg structure)
+    # Data
     subject: int = 1
     seed: int = 42
 
-    # Streaming (exactly like NB3)
+    # Streaming
     batch_size: int = 64
     num_workers: int = 4  # Increased to 4 for faster downloads (like NB3)
 
@@ -219,7 +219,7 @@ print(hl)
 # In[ ]:
 
 
-# --- Main Loading Function ---
+# Main Loading Function
 def get_dataloaders(cfg):
     print(f"Setting up streaming dataloaders for Subject {cfg.subject}...")
 
@@ -548,8 +548,6 @@ def evaluate_retrieval(pred_features, target_features, name="Model", n_eval=300)
     pairwise_wins = (correct_sims > sim_matrix).float().sum()
     pairwise_acc = pairwise_wins / (n * (n - 1))
 
-    # 2-way forced choice: for each sample, pick a random distractor and check
-    # if the correct target scores higher. Average over many trials for stability.
     n_trials = 1000
     torch.manual_seed(42)
     wins = 0
@@ -684,10 +682,10 @@ print("Training MLP")
 set_seed(hl.seed)
 
 # Targets: raw CLIP embeddings, expanded to match voxel repeats
-Ytr_clip = (Ytr * Ysd + Ymu).float()                  # unnormalize
+Ytr_clip = (Ytr * Ysd + Ymu).float()
 Yva_clip = (Yva * Ysd + Ymu).float()
 
-Ytr_clip_exp = Ytr_clip.repeat_interleave(R, dim=0)   # match expanded voxels
+Ytr_clip_exp = Ytr_clip.repeat_interleave(R, dim=0)
 print(f"Expanded targets: {Ytr_clip_exp.shape[0]} (should match {Xtr_exp.shape[0]})")
 assert Ytr_clip_exp.shape[0] == Xtr_exp.shape[0]
 
@@ -813,9 +811,6 @@ torch.cuda.empty_cache()
 # In[ ]:
 
 
-# MLP outputs unit vectors. Scale using TRAIN-set CLIP norms so downstream
-# code and saving get embeddings in the same ballpark as Ridge and GT
-# without using any test-set statistics.
 train_mean_norm = Ytr_clip.norm(dim=-1).mean()
 Yte_pred_mlp_un = Yte_pred_mlp * train_mean_norm
 
@@ -898,7 +893,7 @@ from diffusers import StableDiffusionPipeline
 
 print("Loading SD 1.5 + IP-Adapter (compatible with 1024-dim OpenCLIP)...")
 
-# 1. Load Base SD 1.5
+#  Load Base SD 1.5
 pipe = StableDiffusionPipeline.from_pretrained(
     "runwayml/stable-diffusion-v1-5",
     torch_dtype=torch.float16,
@@ -906,7 +901,7 @@ pipe = StableDiffusionPipeline.from_pretrained(
     safety_checker=None
 ).to(device)
 
-# 2. Load IP-Adapter
+#  Load IP-Adapter
 pipe.load_ip_adapter("h94/IP-Adapter", subfolder="models", weight_name="ip-adapter_sd15.bin")
 
 # Optimization
@@ -921,7 +916,6 @@ def generate_from_clip(clip_embedding, seed=42):
     """
     Generates image from 1024-dim embedding using IP-Adapter.
     """
-    # Reshape: [1, 1024] -> [1, 1, 1024]
     valid_embeds = clip_embedding.view(1, 1, -1).to(device, dtype=torch.float16)
 
     # Create negative embeddings (zeros) to match positive shape

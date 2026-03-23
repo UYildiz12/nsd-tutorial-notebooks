@@ -263,7 +263,7 @@ print(f"Loaded and verified {n_ll} aligned samples.")
 # In[6]:
 
 
-print("Loading SDXL Components (safe IP-Adapter setup)...")
+print("Loading SDXL Components...")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 if "pipe" in globals():
@@ -328,7 +328,7 @@ print("SDXL Img2Img + IP-Adapter ready.")
 # #### Generation Functions
 # Here we define the two generation conditions used in the comparison. The semantic-only baseline tests what the high-level embedding can do by itself, while the hybrid function combines that semantic signal with the low-level reconstruction from Notebook 3.
 
-# In[76]:
+# In[23]:
 
 
 def preprocess_image(tensor_img):
@@ -358,10 +358,10 @@ def prepare_ip_adapter_embeds(embedding_tensor):
 def generate_sdxl_2pass(
     low_level_img_tensor,
     embedding_tensor,
-    seed=12,
+    seed=42,
     pass1_steps=24,
     pass2_steps=28,
-    pass1_strength=0.62,
+    pass1_strength=0.7,
     pass2_strength=0.35,
 ):
     pil_low = preprocess_image(low_level_img_tensor)
@@ -371,7 +371,7 @@ def generate_sdxl_2pass(
 
     # Pass 1: semantic correction while preserving low-level layout
     generator = torch.Generator(device="cpu").manual_seed(seed)
-    pipe.set_ip_adapter_scale(0.9)
+    pipe.set_ip_adapter_scale(1.1)
     pass1_result = pipe(
         prompt="realistic",
         negative_prompt="blurry, unrealistic, extra limbs",
@@ -379,7 +379,7 @@ def generate_sdxl_2pass(
         ip_adapter_image_embeds=[combined_embeds],
         strength=pass1_strength,
         num_inference_steps=pass1_steps,
-        guidance_scale=5.26,
+        guidance_scale=6.5,
         generator=generator,
     ).images[0]
 
@@ -387,7 +387,7 @@ def generate_sdxl_2pass(
     generator = torch.Generator(device="cpu").manual_seed(seed)
     pipe.set_ip_adapter_scale(0.3)
     final_result = pipe(
-        prompt="high quality, highly detailed, sharp focus, realistic, hyperrealistic",
+        prompt="high quality, highly detailed, sharp focus, realistic, hyperrealistic, sharp",
         negative_prompt="blurry, low quality, distorted, unrealistic, painting, illustration, fog, smoke,blur",
         image=pass1_result,
         ip_adapter_image_embeds=[combined_embeds],
@@ -411,9 +411,9 @@ def generate_semantic_only(embedding_tensor, seed=42, steps=30):
     combined_embeds = prepare_ip_adapter_embeds(embedding_tensor)
 
     generator = torch.Generator(device="cpu").manual_seed(seed)
-    pipe.set_ip_adapter_scale(1.0)
+    pipe.set_ip_adapter_scale(1.5)
     result = pipe(
-        prompt="",
+        prompt="sharp, realistic, photographic",
         negative_prompt="blurry, low quality, distorted, unrealistic, painting, illustration",
         image=blank,
         ip_adapter_image_embeds=[combined_embeds],
@@ -437,7 +437,7 @@ def generate_semantic_only(embedding_tensor, seed=42, steps=30):
 # 
 # Pay attention to how the combination works. The spatial layout from the low-level reconstruction constrains where things appear. The semantic embedding influences what those things look like. Neither signal alone determines the output; rather, they work together to produce something better than either could achieve independently.
 
-# In[77]:
+# In[24]:
 
 
 torch.manual_seed(42)
@@ -490,7 +490,7 @@ plt.show()
 # 
 # These small utilities prepare images for evaluation. The first converts a PIL image into a normalized PyTorch tensor, and the second defines the resolution used for our quantitative metrics.
 
-# In[78]:
+# In[25]:
 
 
 def pil_to_chw01(pil_img, size=256):
@@ -509,7 +509,7 @@ EVAL_RESOLUTION = 425
 # #### Evaluation Metrics
 # We evaluate reconstructions at two levels. Pixel-based metrics such as PixCorr and SSIM measure spatial fidelity, while feature-based identification metrics ask whether a pretrained vision model still recognizes the reconstruction as matching the correct image.
 
-# In[79]:
+# In[26]:
 
 
 @torch.no_grad()
@@ -569,15 +569,15 @@ def compute_ssim_mean(all_recons, all_images):
 # ####Run the Tutorial Evaluation
 # This cell runs a small evaluation subset to keep the tutorial practical on Colab. In the paper we report full test-set numbers, but here the goal is to show the expected trade-off pattern between low-level, semantic-only, and hybrid reconstructions without a very long runtime.
 
-# In[80]:
+# In[30]:
 
 
-N_QUANT_EVAL = 30
+N_QUANT_EVAL = 40
 #N_QUANT_EVAL = len(gt_images_tensor) #Uncomment this line to run the full evaluation, same with the paper.
-SEM_ONLY_STEPS = 20
-HYB_PASS1_STEPS = 24
-HYB_PASS2_STEPS = 28
-BASE_SEED = 4
+SEM_ONLY_STEPS = 8
+HYB_PASS1_STEPS = 12
+HYB_PASS2_STEPS = 12
+BASE_SEED = 42
 
 eval_indices = list(range(N_QUANT_EVAL))
 print(f"Quantitative evaluation: {N_QUANT_EVAL} test samples")
@@ -689,12 +689,16 @@ print(summary_df.to_string(index=False))
 # The table evaluates all three conditions across four metrics that capture different levels of visual similarity. PixCorr and SSIM measure pixel-level fidelity, reflecting how closely the reconstruction matches the original in raw spatial structure and luminance. InceptionV3 and CLIP operate at a higher level, measuring whether the reconstruction depicts the same kind of scene and objects as the original. These two neural network metrics are reported as 2-way identification accuracy. Given a reconstruction and two candidate images, one correct and one random distractor, how often does the model's feature space pick the correct match? Chance performance is 50%.
 # 
 # The pattern across conditions is consistent. Low-level-only reconstructions are strong on pixel-level metrics because they directly preserve spatial structure from the decoded latents, but they struggle on high-level metrics because a blurry color-matched blob often lacks recognizable object identity. Semantic-only generation flips this entirely. High-level scores are strong, but pixel-level fidelity is weak because the generative model has no spatial anchor and invents layouts freely. The hybrid pipeline finds a middle ground, retaining much of the spatial structure while matching or exceeding the semantic-only condition on high-level metrics.
+# 
+# A caveat is that the CLIP embedding is the dominant signal in our hybrid reconstructions for this tutorial. The low-level path is still useful, but as Notebook 3 showed, VAE reconstructions from brain activity reliably recover coarse layout features like the separation of ground and sky while they are not as reliable in the other spatial details. Since the hybrid pipeline uses these low-level reconstructions as its structural starting point, the fidelity ceiling they impose carries forward into the final output. We encoruage you to see how the low level priors affect the final hybrid reconstructions by comparing the low-level and hybrid reconstructions below.
+# 
+# 
 
-# In[81]:
+# In[34]:
 
 
 # Visualize a grid of reconstructions
-N_SHOW = N_QUANT_EVAL
+N_SHOW = N_QUANT_EVAL//3
 fig, axes = plt.subplots(N_SHOW, 4, figsize=(16, 4 * N_SHOW))
 
 col_labels = ["Ground Truth", "Low-level only", "Semantic only", "Hybrid"]
@@ -714,7 +718,7 @@ plt.tight_layout()
 plt.show()
 
 
-# The reconstructions illustrate the complementary nature of the two signals. Low-level outputs preserve coarse layout and color but lack semantic content. Semantic-only outputs often identify the correct category but invent the spatial context entirely. Hybrid outputs combine both, placing recognizable objects in approximately correct positions with approximately correct colors, though fine details diverge from the ground truth. The combination does not benefit every sample equally, and this variability is more visible in our pipeline than in state-of-the-art systems because we lack the dedicated diffusion prior and custom generation model that systems like MindEye use to bridge the gap between noisy brain-predicted embeddings and the conditioning interface of the generative model.
+# The reconstructions illustrate the complementary nature of the two signals. Low-level outputs preserve coarse layout and color but lack semantic content. Semantic-only outputs often identify the correct category but invent the spatial context entirely. Hybrid outputs combine both, placing recognizable objects in approximately correct positions with approximately correct colors, though fine details diverge from the ground truth. The combination does not benefit every sample equally, and this variability is more visible in our pipeline than in state-of-the-art systems because we lack several components that published pipelines use to bridge the gap between noisy brain-predicted embeddings and the conditioning interface of the generative model. These include dedicated diffusion priors, dual CLIP conditioning through both text and vision branches, and custom-trained generation models. These components are omitted because they could not be reliably implemented within the hardware constraints of this tutorial without substantially increasing complexity and runtime.
 # 
 # It is also worth noting that modern reconstruction pipelines often generate multiple candidate images per stimulus and select the best one using the model's own predicted embedding as a scoring criterion. MindEye, for example, generates 16 candidates per test image and selects the one whose CLIP embedding is most similar to the brain-predicted embedding. This second-order selection can substantially boost quantitative metrics because the stochastic nature of diffusion sampling means some candidates will align better with the target by chance. Our pipeline generates a single image per stimulus with a fixed seed, which provides a more conservative estimate of reconstruction quality but also means our reported metrics do not benefit from this selection effect.
 # 
